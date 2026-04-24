@@ -1,0 +1,7 @@
+﻿kategorie_ids;fragetext;erklaerung;antwort1;antwort2;antwort3;antwort4;korrekte_antwort_nr;typ
+2;Was ist die Hauptaufgabe eines Hypervisors?;Er verwaltet virtuelle Maschinen;Virtualisierung von Hardware;Firewall-Schutz;Datenbankabfragen;E-Mail-Filterung;1;MC
+3;Nennen Sie zwei Beispiele für einen Webserver (Freitext);Mehrere richtige Antworten möglich;Apache;nginx;;;1;FT
+3;Welcher Port wird standardmäßig für HTTPS verwendet? (Freitext, Zahl);443;443;;;;1;FT
+2;Welche USV-Art bietet die höchste Sicherheit?;Online-USV, auch VFI genannt;Online-USV;VFI;Line-Interactive;Offline;1;MC
+2;Nennen Sie den Standard-Port für HTTP (Freitext);80;80;;;;1;FT
+3;Was bedeutet die Abkürzung ACID im Datenbankkontext?;Atomicity, Consistency, Isolation, Durability;Atomicity, Consistency, Isolation, Durability;Availability, Consistency, Integrity, Durability;Atomicity, Concurrency, Isolation, Distribution;Authentication, Consistency, Isolation, Durability;1;MC

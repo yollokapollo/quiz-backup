@@ -7,6 +7,7 @@ import os
 import logging
 import platform
 import tempfile
+import getpass
 
 # ------------------------------------------------------------------
 # Session für eingeloggten Benutzer (einmal pro Programmstart)
@@ -108,7 +109,7 @@ def benutzer_login(cursor, conn):
                 log_event("Passwort gesetzt", username=kuerzel)
                 return benutzer_id, name, kuerzel
             else:
-                eingabe = input("Passwort: ").strip()
+                eingabe = getpass.getpass("Passwort: ").strip()
                 if bcrypt.checkpw(eingabe.encode('utf-8'), pw_hash.encode('utf-8')):
                     print(f"Willkommen zurück, {name}!")
                     log_event("Login erfolgreich", username=kuerzel)
@@ -120,7 +121,7 @@ def benutzer_login(cursor, conn):
         else:
             print("Neuer Benutzer – bitte registrieren.")
             name = input("Voller Name: ").strip()
-            passwort = input("Passwort: ").strip()
+            passwort = getpass.getpass("Passwort: ").strip()
             if not name or not passwort:
                 print("Name und Passwort sind erforderlich.")
                 continue
@@ -155,7 +156,7 @@ def authentifiziere_benutzer():
         cursor.close()
         conn.close()
         return None
-    passwort = input("Passwort: ").strip()
+    passwort = getpass.getpass("Passwort: ").strip()
     if bcrypt.checkpw(passwort.encode('utf-8'), pw_hash.encode('utf-8')):
         cursor.close()
         conn.close()
@@ -218,25 +219,30 @@ def waehle_unterkategorien(von_id, bis_id, titel):
         return []
 
     print(f"\n--- {titel.upper()} ---")
-    for kat in kategorien:
-        print(f"{kat[0]}: {kat[1]} ({kat[2]} Fragen)")
+    # Mapping: laufende Nummer → echte ID
+    nummern = {}
+    for idx, kat in enumerate(kategorien, start=1):
+        nummern[str(idx)] = kat[0]          # laufende Nummer → kategorie_id
+        print(f"{idx}: {kat[1]} ({kat[2]} Fragen)")
 
-    print("\nMehrfachauswahl möglich (z.B. '2,4,7' oder 'alle' für alle in diesem Bereich).")
+    print("\nMehrfachauswahl möglich (z.B. '1,3' oder 'alle' für alle in diesem Bereich).")
     eingabe = input("Deine Wahl: ").strip().lower()
 
     if eingabe == 'alle':
         return [kat[0] for kat in kategorien]
 
     try:
-        ids = [int(x.strip()) for x in eingabe.split(',')]
-        gueltige_ids = [kat[0] for kat in kategorien]
-        ids = [id for id in ids if id in gueltige_ids]
+        gewaehlte_nummern = [x.strip() for x in eingabe.split(',')]
+        ids = []
+        for nr in gewaehlte_nummern:
+            if nr in nummern:
+                ids.append(nummern[nr])
         if not ids:
-            print("Keine gültigen IDs eingegeben.")
+            print("Keine gültigen Nummern eingegeben.")
             return []
         return ids
-    except ValueError:
-        print("Ungültiges Format. Bitte Zahlen mit Komma getrennt eingeben.")
+    except:
+        print("Ungültiges Format. Bitte Nummern mit Komma getrennt eingeben.")
         return []
 
 # ------------------------------------------------------------------
@@ -407,25 +413,30 @@ def persoenliche_statistik():
         name = current_user_name
     conn = connect_db()
     cursor = conn.cursor()
+    # Gesamtdurchschnitt (sicher berechnet)
     cursor.execute("""
-        SELECT AVG(s.punkte / (SELECT COUNT(*) FROM detail d WHERE d.sitzung_id = s.sitzung_id) * 100)
-        FROM sitzung s
-        WHERE s.benutzer_id = %s
-    """, (benutzer_id,))
-    avg_total = cursor.fetchone()[0]
-    avg_total = round(avg_total, 1) if avg_total else 0.0
+                   SELECT SUM(s.punkte)                                                          AS summe_punkte,
+                          SUM((SELECT COUNT(*) FROM detail d WHERE d.sitzung_id = s.sitzung_id)) AS summe_fragen
+                   FROM sitzung s
+                   WHERE s.benutzer_id = %s
+                   """, (benutzer_id,))
+    row = cursor.fetchone()
+    summe_punkte = row[0] or 0
+    summe_fragen = row[1] or 0
+    avg_total = round((summe_punkte / summe_fragen) * 100, 1) if summe_fragen > 0 else 0.0
 
+    # Durchschnitt pro Modul (ebenfalls sicher)
     cursor.execute("""
-        SELECT 
-            COALESCE(k.bezeichnung, 'Mehrere Kategorien') AS bezeichnung,
-            AVG(s.punkte / (SELECT COUNT(*) FROM detail d WHERE d.sitzung_id = s.sitzung_id) * 100) AS durchschnitt,
-            COUNT(*) AS anzahl_spiele
-        FROM sitzung s
-        LEFT JOIN kategorie k ON s.kategorie_id = k.kategorie_id
-        WHERE s.benutzer_id = %s
-        GROUP BY s.kategorie_id
-        ORDER BY durchschnitt DESC
-    """, (benutzer_id,))
+                   SELECT COALESCE(k.bezeichnung, 'Mehrere Kategorien')                          AS bezeichnung,
+                          SUM(s.punkte)                                                          AS summe_punkte,
+                          SUM((SELECT COUNT(*) FROM detail d WHERE d.sitzung_id = s.sitzung_id)) AS summe_fragen,
+                          COUNT(*)                                                               AS anzahl_spiele
+                   FROM sitzung s
+                            LEFT JOIN kategorie k ON s.kategorie_id = k.kategorie_id
+                   WHERE s.benutzer_id = %s
+                   GROUP BY s.kategorie_id
+                   ORDER BY summe_punkte / summe_fragen DESC
+                   """, (benutzer_id,))
     stats = cursor.fetchall()
     print("\n" + "=" * 50)
     print(f"📊 PERSÖNLICHE STATISTIK FÜR {name}")
@@ -435,12 +446,12 @@ def persoenliche_statistik():
     print("-" * 50)
     for row in stats:
         modul = row[0]
-        avg = round(row[1], 1) if row[1] else 0.0
-        spiele = row[2]
+        spunkte = row[1] or 0
+        sfragen = row[2] or 0
+        spiele = row[3]
+        avg = round((spunkte / sfragen) * 100, 1) if sfragen > 0 else 0.0
         print(f"{modul:<35} {avg}%  ({spiele} Spiele)")
     print("=" * 50)
-    cursor.close()
-    conn.close()
 
 # ------------------------------------------------------------------
 # QUIZ STARTEN
